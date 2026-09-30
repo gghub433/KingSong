@@ -38,7 +38,7 @@ import kotlin.math.roundToInt
 
 /**
  * Phone on the handlebar: one huge number, black background, screen kept on. Tap to switch the
- * metric; the background flashes amber/red before tiltback.
+ * metric; the background turns amber/red before tiltback and red while an alarm is active.
  */
 @Composable
 fun HandlebarScreen(vm: DashboardViewModel, onExit: () -> Unit) {
@@ -59,9 +59,10 @@ fun HandlebarScreen(vm: DashboardViewModel, onExit: () -> Unit) {
     }
     val level = ride.tiltback?.level
     val background by animateColorAsState(
-        when (level) {
-            TiltbackPredictor.Level.CRITICAL -> GyroColors.Danger.copy(alpha = 0.55f)
-            TiltbackPredictor.Level.WARNING -> GyroColors.Warning.copy(alpha = 0.35f)
+        when {
+            level == TiltbackPredictor.Level.CRITICAL -> GyroColors.Danger.copy(alpha = 0.55f)
+            ride.live && ride.activeAlarms.isNotEmpty() -> GyroColors.Danger.copy(alpha = 0.40f)
+            level == TiltbackPredictor.Level.WARNING -> GyroColors.Warning.copy(alpha = 0.35f)
             else -> Color.Black
         },
         label = "bg",
@@ -78,6 +79,14 @@ fun HandlebarScreen(vm: DashboardViewModel, onExit: () -> Unit) {
     ) {
         IconButton(onClick = onExit, modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
             Icon(Icons.Filled.Close, "Выйти", tint = GyroColors.TextDim)
+        }
+        if (ride.live && ride.activeAlarms.isNotEmpty()) {
+            Text(
+                ride.activeAlarms.joinToString(" · ") { it.title },
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp, start = 16.dp, end = 16.dp),
+            )
         }
         BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             // Size the digits to the screen: about 0.6 em per digit.

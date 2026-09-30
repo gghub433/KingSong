@@ -130,6 +130,19 @@ class AlarmEngineTest {
     }
 
     @Test
+    fun `active set follows the condition`() {
+        val e = AlarmEngine()
+        val rules = listOf(speedRule)
+        e.evaluate(rules, Telemetry(speedKmh = 45.0), 0)
+        assertEquals(setOf(1L), e.activeRuleIds)
+        e.evaluate(rules, Telemetry(speedKmh = 30.0), 100)
+        assertTrue(e.activeRuleIds.isEmpty())
+        e.evaluate(rules, Telemetry(speedKmh = 45.0), 200)
+        e.evaluate(listOf(speedRule.copy(enabled = false)), Telemetry(speedKmh = 45.0), 300)
+        assertTrue("disabling a rule clears it", e.activeRuleIds.isEmpty())
+    }
+
+    @Test
     fun `battery low fires once`() {
         val rule = AlarmEngine.DEFAULT_RULES.first { it.metric == AlarmMetric.BATTERY }
         val e = AlarmEngine()
