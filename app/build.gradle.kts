@@ -7,6 +7,13 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// The release workflow passes the version; local builds use the defaults.
+val gyroVersionName = (findProperty("gyroVersionName") as String?) ?: "0.1.0"
+val gyroVersionCode = (findProperty("gyroVersionCode") as String?)?.toInt() ?: 100
+
+// Release signing key comes from the environment (GitHub secrets, see README); never from the repo.
+val releaseKeystore: String? = System.getenv("GYRO_KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "app.gyro"
     compileSdk = 36
@@ -15,14 +22,28 @@ android {
         applicationId = "app.gyro"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = gyroVersionCode
+        versionName = gyroVersionName
+    }
+
+    signingConfigs {
+        releaseKeystore?.let { path ->
+            create("release") {
+                storeFile = file(path)
+                storePassword = System.getenv("GYRO_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("GYRO_KEY_ALIAS")
+                keyPassword = System.getenv("GYRO_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            // R8 stays off until a shrunk build has been tried on a real wheel.
+            isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Without a release key the APK is signed with the debug key so it still installs.
+            signingConfig = signingConfigs.getByName(if (releaseKeystore != null) "release" else "debug")
         }
     }
 

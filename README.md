@@ -95,6 +95,26 @@ GitHub Actions (`.github/workflows/android.yml`) на каждый push:
 - гоняет тесты;
 - собирает отладочный APK — его можно скачать во вкладке Actions, артефакт `gyro-debug-apk`.
 
+### Выпуск версии
+
+Готовые APK публикуются на странице [Releases](https://github.com/gghub433/KingSong/releases). Новую версию выпускает workflow «Release»: во вкладке Actions нажмите «Run workflow» и укажите версию (например `0.2.0`). Можно и так: запушить тег `v0.2.0`. Workflow прогоняет тесты, собирает release-APK (в release-сборке интерфейс работает заметно быстрее, чем в отладочной) и создаёт релиз `Gyro-<версия>.apk`.
+
+**Подпись.** Android ставит обновление поверх, только если оно подписано тем же ключом. Репозиторий публичный, поэтому ключ хранится в секретах GitHub, а не в коде. Пока секретов нет, релиз подписывается отладочным ключом, а он на CI каждый раз новый, поэтому новую версию придётся ставить после удаления старой. Чтобы обновления вставали поверх, один раз создайте ключ, например в Termux:
+
+```
+pkg install openjdk-17
+keytool -genkeypair -v -keystore gyro.jks -alias gyro -keyalg RSA -keysize 4096 -validity 36500
+base64 -w0 gyro.jks > gyro.jks.b64
+```
+
+Затем в GitHub → Settings → Secrets and variables → Actions добавьте секреты:
+- `GYRO_KEYSTORE_BASE64` — содержимое `gyro.jks.b64`;
+- `GYRO_KEYSTORE_PASSWORD` — пароль хранилища;
+- `GYRO_KEY_ALIAS` — `gyro`;
+- `GYRO_KEY_PASSWORD` — пароль ключа.
+
+Сам `gyro.jks` сохраните в надёжном месте: без него обновления подписать нельзя.
+
 ### На телефоне через Termux
 
 Нужны телефон на ARM (почти любой современный), около 4 ГБ свободного места и желательно от 4 ГБ ОЗУ. Termux ставьте из F-Droid или с GitHub: версия из Google Play устарела и не получает пакеты.
