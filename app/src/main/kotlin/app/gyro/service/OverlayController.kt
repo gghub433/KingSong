@@ -114,9 +114,9 @@ class OverlayController(private val context: Context) {
         val battery = t?.batteryPercent?.roundToInt()?.let { "$it%" } ?: "—"
         val temp = t?.maxTemperatureC?.roundToInt()?.let { " · $it°" } ?: ""
         infoView?.text = "$battery$temp"
-        val color = when (s.tiltback?.level) {
-            TiltbackPredictor.Level.CRITICAL -> 0xFFFF5A5F.toInt()
-            TiltbackPredictor.Level.WARNING -> 0xFFFFB547.toInt()
+        val color = when {
+            s.tiltback?.level == TiltbackPredictor.Level.CRITICAL || (s.live && s.activeAlarms.isNotEmpty()) -> 0xFFFF5A5F.toInt()
+            s.tiltback?.level == TiltbackPredictor.Level.WARNING -> 0xFFFFB547.toInt()
             else -> ACCENT
         }
         background?.setStroke(dp(if (color == ACCENT) 2f else 4f).roundToInt(), color)

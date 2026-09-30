@@ -23,32 +23,25 @@ import app.gyro.data.RideEvent
 import app.gyro.data.RideSnapshot
 import app.gyro.protocol.AlarmMetric
 import app.gyro.protocol.ProtocolFamily
-import app.gyro.protocol.TiltbackPredictor
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /**
  * Keeps the wheel connection alive with the screen off: foreground service of type
- * `connectedDevice`, which also speaks alarms, vibrates, updates the ride notification and shows
- * the optional overlay bubble.
+ * `connectedDevice`, which also updates the ride notification, posts silent alerts and shows the
+ * optional overlay bubble. Gyro makes no sound and does not vibrate.
  */
 class WheelService : LifecycleService() {
 
     private val container by lazy { (application as GyroApp).container }
-    private lateinit var voice: VoiceAnnouncer
-    private lateinit var haptics: Haptics
     private lateinit var overlay: OverlayController
     private var prefs = Prefs()
 
     @OptIn(FlowPreview::class)
     override fun onCreate() {
         super.onCreate()
-        voice = VoiceAnnouncer(this)
-        haptics = Haptics(this)
         overlay = OverlayController(this)
         createChannels()
 
@@ -60,7 +53,6 @@ class WheelService : LifecycleService() {
                 overlay.update(s)
             }
         }
-        lifecycleScope.launch { periodicSummary() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -92,7 +84,6 @@ class WheelService : LifecycleService() {
 
     override fun onDestroy() {
         overlay.hide()
-        voice.shutdown()
         super.onDestroy()
     }
 
@@ -104,56 +95,10 @@ class WheelService : LifecycleService() {
         when (event) {
             is RideEvent.Alarm -> {
                 val rule = event.event.rule
-                if (rule.voice && prefs.voiceEnabled) voice.speak(event.event.spoken, urgent = rule.metric != AlarmMetric.BATTERY)
-                if (rule.vibrate && prefs.vibrationEnabled) haptics.alarm()
                 if (rule.metric == AlarmMetric.BATTERY) postAlert(rule.title, "Заряд ${event.event.value.roundToInt()}%")
             }
-            is RideEvent.Tiltback -> {
-                val a = event.assessment
-                val critical = a.level == TiltbackPredictor.Level.CRITICAL
-                if (prefs.vibrationEnabled) if (critical) haptics.critical() else haptics.alarm()
-                if (prefs.voiceEnabled) voice.speak(tiltbackPhrase(a), urgent = true)
-            }
-            is RideEvent.WheelWarning -> {
-                if (prefs.voiceEnabled) voice.speak(event.alert.text, urgent = false)
-                if (prefs.vibrationEnabled) haptics.alarm()
-                postAlert("Колесо сообщает", event.alert.text)
-            }
-            is RideEvent.Connected -> if (prefs.voiceEnabled) voice.speak("Колесо подключено")
-            RideEvent.ConnectionLost -> {
-                if (prefs.voiceEnabled) voice.speak("Связь с колесом потеряна", urgent = true)
-                if (prefs.vibrationEnabled) haptics.critical()
-            }
+            is RideEvent.WheelWarning -> postAlert("Колесо сообщает", event.alert.text)
         }
-    }
-
-    private fun tiltbackPhrase(a: TiltbackPredictor.Assessment): String = when (a.reason) {
-        TiltbackPredictor.Reason.SPEED -> "Сбавь скорость, близко к пределу"
-        TiltbackPredictor.Reason.PWM_TREND -> "Нагрузка растёт, сбавь"
-        else -> "Нагрузка ${a.pwmPercent?.roundToInt() ?: ""} процентов, сбавь"
-    }
-
-    private suspend fun periodicSummary() {
-        while (lifecycleScope.isActive) {
-            val minutes = prefs.voiceIntervalMin
-            if (!prefs.voiceEnabled || minutes <= 0) {
-                delay(15_000)
-                continue
-            }
-            delay(minutes * 60_000L)
-            val s = container.rideMonitor.snapshot.value
-            if (prefs.voiceEnabled && s.live) voice.speak(summary(s))
-        }
-    }
-
-    /** "Скорость 32. Заряд 64 процента. Запас 25 километров." */
-    private fun summary(s: RideSnapshot): String {
-        val t = s.wheel?.telemetry ?: return ""
-        val parts = mutableListOf("Скорость ${t.absSpeedKmh.roundToInt()}")
-        t.batteryPercent?.roundToInt()?.let { parts += "Заряд $it ${VoiceAnnouncer.plural(it, "процент", "процента", "процентов")}" }
-        s.range?.km?.roundToInt()?.let { parts += "Запас $it ${VoiceAnnouncer.plural(it, "километр", "километра", "километров")}" }
-        t.maxTemperatureC?.roundToInt()?.let { parts += "Температура $it" }
-        return parts.joinToString(". ")
     }
 
     private fun rideNotification(s: RideSnapshot): Notification {
@@ -203,6 +148,7 @@ class WheelService : LifecycleService() {
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)
+            .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
         runCatching { notificationManager().notify(ALERT_NOTIFICATION_ID + (text.hashCode() and 0xFF), n) }
@@ -213,9 +159,15 @@ class WheelService : LifecycleService() {
         nm.createNotificationChannel(
             NotificationChannel(RIDE_CHANNEL, getString(R.string.notification_channel_ride), NotificationManager.IMPORTANCE_LOW),
         )
+        // Alerts pop up on screen but stay silent: no sound, no vibration.
         nm.createNotificationChannel(
-            NotificationChannel(ALERT_CHANNEL, getString(R.string.notification_channel_alerts), NotificationManager.IMPORTANCE_HIGH),
+            NotificationChannel(ALERT_CHANNEL, getString(R.string.notification_channel_alerts), NotificationManager.IMPORTANCE_HIGH).apply {
+                setSound(null, null)
+                enableVibration(false)
+            },
         )
+        // Channel settings are fixed once created; drop the old channel that used the default sound and vibration.
+        nm.deleteNotificationChannel(LEGACY_ALERT_CHANNEL)
     }
 
     private fun notificationManager() = getSystemService(NotificationManager::class.java)
@@ -227,7 +179,8 @@ class WheelService : LifecycleService() {
         private const val EXTRA_NAME = "name"
         private const val EXTRA_FAMILY = "family"
         private const val RIDE_CHANNEL = "ride"
-        private const val ALERT_CHANNEL = "alerts"
+        private const val ALERT_CHANNEL = "alerts_silent"
+        private const val LEGACY_ALERT_CHANNEL = "alerts"
         private const val RIDE_NOTIFICATION_ID = 1
         private const val ALERT_NOTIFICATION_ID = 100
 

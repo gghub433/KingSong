@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.gyro.ble.ConnectionState
 import app.gyro.data.Prefs
 import app.gyro.data.RideSnapshot
+import app.gyro.protocol.AlarmMetric
 import app.gyro.protocol.AlarmRule
 import app.gyro.protocol.BatteryEstimator
 import app.gyro.protocol.Capability
@@ -131,6 +132,9 @@ fun DashboardScreen(
             }
         }
         item { TiltbackBanner(ride.tiltback, ride.tiltbackSpeedKmh, t?.absSpeedKmh) }
+        if (ride.live && ride.activeAlarms.isNotEmpty()) {
+            item { ActiveAlarmsBanner(ride.activeAlarms) }
+        }
         val alerts = ride.wheel?.alerts.orEmpty()
         if (alerts.isNotEmpty()) {
             item {
@@ -199,13 +203,14 @@ fun DashboardScreen(
         item {
             AlarmsCard(
                 rules = rules,
+                activeIds = if (ride.live) ride.activeAlarms.map { it.id }.toSet() else emptySet(),
                 onToggle = { vm.saveAlarm(it.copy(enabled = !it.enabled)) },
                 onEdit = { editAlarm = it },
                 onAdd = { editAlarm = newAlarmTemplate() },
                 onDelete = { vm.deleteAlarm(it.id) },
             )
         }
-        item { VoiceCard(prefs, vm) }
+        item { LoadWarningCard(prefs, vm) }
         item { WheelInfoCard(ride, onEditBattery = { editBattery = true }) }
     }
 
@@ -328,6 +333,20 @@ private fun TiltbackBanner(a: TiltbackPredictor.Assessment?, tiltbackKmh: Double
                 Icon(Icons.Filled.Warning, null, tint = color)
                 Spacer(Modifier.width(10.dp))
                 Text(text, style = MaterialTheme.typography.titleMedium, color = color)
+            }
+        }
+    }
+}
+
+/** Alarms are silent: while a threshold is exceeded it is shown here, on the gauge and on the overlay. */
+@Composable
+private fun ActiveAlarmsBanner(alarms: List<AlarmRule>) {
+    Surface(shape = RoundedCornerShape(16.dp), color = GyroColors.Danger.copy(alpha = 0.18f)) {
+        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, null, tint = GyroColors.Danger)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                alarms.forEach { Text(it.title, style = MaterialTheme.typography.titleMedium, color = GyroColors.Danger) }
             }
         }
     }
@@ -544,6 +563,7 @@ private fun EnergyBar(out: Double, regen: Double) {
 @Composable
 private fun AlarmsCard(
     rules: List<AlarmRule>,
+    activeIds: Set<Long>,
     onToggle: (AlarmRule) -> Unit,
     onEdit: (AlarmRule) -> Unit,
     onAdd: () -> Unit,
@@ -560,14 +580,15 @@ private fun AlarmsCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(rule.title, style = MaterialTheme.typography.bodyLarge)
+                    val active = rule.id in activeIds
                     Text(
-                        listOfNotNull(
-                            "голос".takeIf { rule.voice },
-                            "вибро".takeIf { rule.vibrate },
-                            if (rule.repeatSeconds > 0) "повтор ${rule.repeatSeconds} с" else "однократно",
-                        ).joinToString(" · "),
+                        when {
+                            active -> "сработал"
+                            rule.metric == AlarmMetric.BATTERY -> "на экране и тихим уведомлением"
+                            else -> "на экране"
+                        },
                         style = MaterialTheme.typography.bodySmall,
-                        color = GyroColors.TextDim,
+                        color = if (active) GyroColors.Danger else GyroColors.TextDim,
                     )
                 }
                 IconButton(onClick = { onEdit(rule) }) { Icon(Icons.Filled.Edit, "Изменить", tint = GyroColors.TextDim) }
@@ -578,25 +599,10 @@ private fun AlarmsCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun VoiceCard(prefs: Prefs, vm: DashboardViewModel) {
-    SectionCard(title = "Голос, вибрация и предупреждения") {
-        SwitchRow("Голосовые подсказки", "Алармы и сводка в наушники, без взгляда на экран", prefs.voiceEnabled) { vm.setVoice(it) }
-        Text("Сводка скорости, заряда и запаса хода", style = MaterialTheme.typography.bodyMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf(0 to "выкл", 2 to "2 мин", 5 to "5 мин", 10 to "10 мин", 15 to "15 мин").forEach { (min, label) ->
-                FilterChip(
-                    selected = prefs.voiceIntervalMin == min,
-                    onClick = { vm.setVoiceInterval(min) },
-                    label = { Text(label) },
-                    enabled = prefs.voiceEnabled,
-                )
-            }
-        }
-        SwitchRow("Вибрация", "Алармы и tiltback ощущаются через карман", prefs.vibrationEnabled) { vm.setVibration(it) }
-        HorizontalDivider(color = GyroColors.Outline)
-        Text("Предупреждать о нагрузке (PWM) заранее", style = MaterialTheme.typography.bodyMedium)
+private fun LoadWarningCard(prefs: Prefs, vm: DashboardViewModel) {
+    SectionCard(title = "Предупреждения о нагрузке") {
+        Text("Подсвечивать нагрузку (PWM) заранее", style = MaterialTheme.typography.bodyMedium)
         var caution by remember(prefs.pwmCaution) { mutableStateOf(prefs.pwmCaution.toFloat()) }
         var warning by remember(prefs.pwmWarning) { mutableStateOf(prefs.pwmWarning.toFloat()) }
         KeyValue("Внимание с", "${caution.roundToInt()} %", GyroColors.Caution)
@@ -610,21 +616,10 @@ private fun VoiceCard(prefs: Prefs, vm: DashboardViewModel) {
             onValueChangeFinished = { vm.setPwmThresholds(caution.toDouble(), warning.toDouble()) },
         )
         Text(
-            "Tiltback и отключение мотора случаются, когда PWM подходит к 100%. Gyro также смотрит на скорость роста нагрузки и предупреждает за 1–2 секунды.",
+            "Tiltback и отключение мотора случаются, когда PWM подходит к 100%. Gyro смотрит и на скорость роста нагрузки и подсвечивает экран, спидометр и оверлей за 1–2 секунды.",
             style = MaterialTheme.typography.bodySmall,
             color = GyroColors.TextDim,
         )
-    }
-}
-
-@Composable
-fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = GyroColors.TextDim)
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
     }
 }
 

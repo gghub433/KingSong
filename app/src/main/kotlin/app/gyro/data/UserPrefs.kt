@@ -7,7 +7,6 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -20,10 +19,6 @@ private val Context.gyroDataStore: DataStore<Preferences> by preferencesDataStor
 enum class HandlebarMetric(val label: String) { SPEED("Скорость"), BATTERY("Заряд"), PWM("Нагрузка"), POWER("Мощность") }
 
 data class Prefs(
-    val voiceEnabled: Boolean = true,
-    /** Periodic spoken summary while riding; 0 disables it. */
-    val voiceIntervalMin: Int = 5,
-    val vibrationEnabled: Boolean = true,
     val pwmCaution: Double = 70.0,
     val pwmWarning: Double = 80.0,
     val pwmCritical: Double = 90.0,
@@ -42,9 +37,6 @@ class UserPrefs(context: Context) {
         .catch { emit(androidx.datastore.preferences.core.emptyPreferences()) }
         .map { p ->
             Prefs(
-                voiceEnabled = p[VOICE] ?: true,
-                voiceIntervalMin = p[VOICE_INTERVAL] ?: 5,
-                vibrationEnabled = p[VIBRATION] ?: true,
                 pwmCaution = p[PWM_CAUTION] ?: 70.0,
                 pwmWarning = p[PWM_WARNING] ?: 80.0,
                 pwmCritical = p[PWM_CRITICAL] ?: 90.0,
@@ -61,9 +53,6 @@ class UserPrefs(context: Context) {
         store.edit { block(it) }
     }
 
-    suspend fun setVoice(enabled: Boolean) = update { it[VOICE] = enabled }
-    suspend fun setVoiceInterval(minutes: Int) = update { it[VOICE_INTERVAL] = minutes }
-    suspend fun setVibration(enabled: Boolean) = update { it[VIBRATION] = enabled }
     suspend fun setOverlay(enabled: Boolean) = update { it[OVERLAY] = enabled }
     suspend fun setHandlebarMetric(metric: HandlebarMetric) = update { it[HANDLEBAR] = metric.name }
     suspend fun setAlarmsSeeded() = update { it[ALARMS_SEEDED] = true }
@@ -80,9 +69,6 @@ class UserPrefs(context: Context) {
     }
 
     private companion object {
-        val VOICE = booleanPreferencesKey("voice_enabled")
-        val VOICE_INTERVAL = intPreferencesKey("voice_interval_min")
-        val VIBRATION = booleanPreferencesKey("vibration_enabled")
         val PWM_CAUTION = doublePreferencesKey("pwm_caution")
         val PWM_WARNING = doublePreferencesKey("pwm_warning")
         val PWM_CRITICAL = doublePreferencesKey("pwm_critical")

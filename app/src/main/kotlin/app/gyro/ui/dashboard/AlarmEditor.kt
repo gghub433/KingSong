@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -18,7 +17,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.gyro.protocol.AlarmMetric
@@ -26,19 +24,13 @@ import app.gyro.protocol.AlarmRule
 
 fun newAlarmTemplate() = AlarmRule(id = 0, metric = AlarmMetric.SPEED, threshold = 40.0)
 
-/**
- * Edits one threshold alarm. A speed rule with only vibration and a single trigger doubles as the
- * "vibrate when I reach N km/h" feedback.
- */
+/** Edits one threshold alarm. Alarms are silent: they show on screen, on the gauge and on the overlay. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AlarmEditorDialog(initial: AlarmRule, onDismiss: () -> Unit, onSave: (AlarmRule) -> Unit) {
     var metric by remember { mutableStateOf(initial.metric) }
     var threshold by remember { mutableStateOf(AlarmRule.formatNumber(initial.threshold)) }
     var above by remember { mutableStateOf(initial.above) }
-    var voice by remember { mutableStateOf(initial.voice) }
-    var vibrate by remember { mutableStateOf(initial.vibrate) }
-    var repeat by remember { mutableStateOf(initial.repeatSeconds) }
     var label by remember { mutableStateOf(initial.label ?: "") }
     val value = threshold.replace(',', '.').toDoubleOrNull()
 
@@ -78,35 +70,20 @@ fun AlarmEditorDialog(initial: AlarmRule, onDismiss: () -> Unit, onSave: (AlarmR
                 OutlinedTextField(
                     value = label,
                     onValueChange = { label = it.take(40) },
-                    label = { Text("Фраза для голоса (необязательно)") },
+                    label = { Text("Название (необязательно)") },
                     singleLine = true,
                 )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = voice, onCheckedChange = { voice = it })
-                    Text("Голос")
-                    Checkbox(checked = vibrate, onCheckedChange = { vibrate = it })
-                    Text("Вибрация")
-                }
-                Text("Повторять, пока условие держится", style = MaterialTheme.typography.labelLarge)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf(0 to "один раз", 3 to "3 с", 10 to "10 с", 30 to "30 с", 60 to "1 мин").forEach { (s, text) ->
-                        FilterChip(selected = repeat == s, onClick = { repeat = s }, label = { Text(text) })
-                    }
-                }
             }
         },
         confirmButton = {
             TextButton(
-                enabled = value != null && (voice || vibrate),
+                enabled = value != null,
                 onClick = {
                     onSave(
                         initial.copy(
                             metric = metric,
                             threshold = value ?: initial.threshold,
                             above = above,
-                            voice = voice,
-                            vibrate = vibrate,
-                            repeatSeconds = repeat,
                             hysteresis = AlarmRule.defaultHysteresis(metric),
                             label = label.trim().ifEmpty { null },
                         ),

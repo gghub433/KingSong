@@ -14,8 +14,6 @@ data class AlarmRuleEntity(
     val metric: String,
     val threshold: Double,
     val above: Boolean,
-    val voice: Boolean,
-    val vibrate: Boolean,
     val repeatSeconds: Int,
     val hysteresis: Double,
     val enabled: Boolean,
@@ -23,13 +21,13 @@ data class AlarmRuleEntity(
 ) {
     fun toRule(): AlarmRule? {
         val m = AlarmMetric.entries.firstOrNull { it.name == metric } ?: return null
-        return AlarmRule(id, m, threshold, above, voice, vibrate, repeatSeconds, hysteresis, enabled, label)
+        return AlarmRule(id, m, threshold, above, repeatSeconds, hysteresis, enabled, label)
     }
 
     companion object {
         fun from(rule: AlarmRule) = AlarmRuleEntity(
             id = rule.id, metric = rule.metric.name, threshold = rule.threshold, above = rule.above,
-            voice = rule.voice, vibrate = rule.vibrate, repeatSeconds = rule.repeatSeconds,
+            repeatSeconds = rule.repeatSeconds,
             hysteresis = rule.hysteresis, enabled = rule.enabled, label = rule.label,
         )
     }

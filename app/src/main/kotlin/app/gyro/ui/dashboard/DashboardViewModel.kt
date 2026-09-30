@@ -130,9 +130,6 @@ class DashboardViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch { c.db.alarmRules().delete(id) }
     }
 
-    fun setVoice(enabled: Boolean) = viewModelScope.launch { c.prefs.setVoice(enabled) }
-    fun setVoiceInterval(minutes: Int) = viewModelScope.launch { c.prefs.setVoiceInterval(minutes) }
-    fun setVibration(enabled: Boolean) = viewModelScope.launch { c.prefs.setVibration(enabled) }
     fun setOverlay(enabled: Boolean) = viewModelScope.launch { c.prefs.setOverlay(enabled) }
     fun setHandlebarMetric(metric: HandlebarMetric) = viewModelScope.launch { c.prefs.setHandlebarMetric(metric) }
 

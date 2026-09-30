@@ -23,15 +23,16 @@ enum class AlarmMetric(val label: String, val unit: String, val defaultAbove: Bo
     }
 }
 
-/** A rider-defined threshold. [repeatSeconds] = 0 fires once per crossing. */
+/**
+ * A rider-defined threshold, shown on screen while it holds. [repeatSeconds] = 0 fires one event
+ * per crossing.
+ */
 data class AlarmRule(
     val id: Long,
     val metric: AlarmMetric,
     val threshold: Double,
     val above: Boolean = metric.defaultAbove,
-    val voice: Boolean = true,
-    val vibrate: Boolean = true,
-    val repeatSeconds: Int = 10,
+    val repeatSeconds: Int = 0,
     val hysteresis: Double = defaultHysteresis(metric),
     val enabled: Boolean = true,
     val label: String? = null,
@@ -55,8 +56,8 @@ data class AlarmRule(
 }
 
 data class AlarmEvent(val rule: AlarmRule, val value: Double, val firstTrigger: Boolean) {
-    /** Short phrase for text-to-speech, e.g. "Скорость 42". */
-    val spoken: String
+    /** Short text for a notification, e.g. "Скорость 42". */
+    val message: String
         get() = rule.label ?: "${rule.metric.label} ${value.toInt()}"
 }
 
@@ -71,11 +72,18 @@ class AlarmEngine {
 
     fun reset() = states.clear()
 
+    /** Rules whose condition holds right now (until the value moves back past the hysteresis). */
+    val activeRuleIds: Set<Long>
+        get() = states.filterValues { it.active }.keys.toSet()
+
     fun evaluate(rules: List<AlarmRule>, t: Telemetry, nowMs: Long): List<AlarmEvent> {
         val events = mutableListOf<AlarmEvent>()
         states.keys.retainAll(rules.map { it.id }.toSet())
         for (rule in rules) {
-            if (!rule.enabled) continue
+            if (!rule.enabled) {
+                states.remove(rule.id)
+                continue
+            }
             val value = rule.metric.read(t) ?: continue
             val state = states.getOrPut(rule.id) { RuleState() }
             val triggered = if (rule.above) value >= rule.threshold else value <= rule.threshold
@@ -99,10 +107,9 @@ class AlarmEngine {
     companion object {
         /** Built-in defaults for a new install; the rider edits or removes them on the dashboard. */
         val DEFAULT_RULES = listOf(
-            AlarmRule(id = 1, metric = AlarmMetric.PWM, threshold = 80.0, repeatSeconds = 3, label = "Нагрузка высокая"),
-            AlarmRule(id = 2, metric = AlarmMetric.TEMPERATURE, threshold = 70.0, repeatSeconds = 60),
-            AlarmRule(id = 3, metric = AlarmMetric.BATTERY, threshold = 30.0, above = false, vibrate = false,
-                repeatSeconds = 0, label = "Поставь колесо на зарядку"),
+            AlarmRule(id = 1, metric = AlarmMetric.PWM, threshold = 80.0, label = "Нагрузка высокая"),
+            AlarmRule(id = 2, metric = AlarmMetric.TEMPERATURE, threshold = 70.0),
+            AlarmRule(id = 3, metric = AlarmMetric.BATTERY, threshold = 30.0, above = false, label = "Поставь колесо на зарядку"),
         )
     }
 }

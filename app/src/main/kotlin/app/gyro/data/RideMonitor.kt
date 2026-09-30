@@ -48,17 +48,17 @@ data class RideSnapshot(
     val tiltbackSpeedKmh: Double? = null,
     val powerHistory: List<PowerPoint> = emptyList(),
     val topSpeedKmh: Double = 0.0,
+    /** Alarms whose threshold is exceeded right now; shown on screen instead of sound or vibration. */
+    val activeAlarms: List<AlarmRule> = emptyList(),
     /** Connected and the last sample is fresh. */
     val live: Boolean = false,
     val factoryBackupAt: Long? = null,
 )
 
+/** One-off happenings the service turns into silent notifications. */
 sealed interface RideEvent {
     data class Alarm(val event: AlarmEvent) : RideEvent
-    data class Tiltback(val assessment: TiltbackPredictor.Assessment) : RideEvent
     data class WheelWarning(val alert: WheelAlert) : RideEvent
-    data class Connected(val name: String) : RideEvent
-    data object ConnectionLost : RideEvent
 }
 
 /**
@@ -93,8 +93,6 @@ class RideMonitor(
     private var lastSampleMs = -1L
     private var lastSampleWallMs = 0L
     private var lastAlerts: Set<WheelAlert> = emptySet()
-    private var lastTiltbackLevel = TiltbackPredictor.Level.NORMAL
-    private var lastTiltbackEventMs = 0L
     private var topSpeed = 0.0
     private var logId: Long? = null
     private var describedModel: String? = null
@@ -131,6 +129,7 @@ class RideMonitor(
     fun resetSession() {
         scope.launch(context) {
             resetCounters()
+            _snapshot.value = _snapshot.value.copy(activeAlarms = emptyList())
             publish(_snapshot.value.wheel)
         }
     }
@@ -185,13 +184,11 @@ class RideMonitor(
                     ),
                 )
                 describedModel = null
-                _events.tryEmit(RideEvent.Connected(target.name ?: "колесо"))
                 prefs.setLastWheel(target.address, target.name)
             }
         } else if (wasConnected) {
             logId?.let { db.connectionLog().close(it, System.currentTimeMillis()) }
             logId = null
-            if (state is ConnectionState.Reconnecting) _events.tryEmit(RideEvent.ConnectionLost)
         }
         wasConnected = connected
         _snapshot.value = _snapshot.value.copy(connection = state, live = connected && _snapshot.value.live)
@@ -219,15 +216,8 @@ class RideMonitor(
         val tiltbackSpeed = tiltbackSpeed(state)
         val assessment = predictor.assess(t, tiltbackSpeed)
         val now = t.timestampMs
-        if (assessment.level >= TiltbackPredictor.Level.WARNING &&
-            (assessment.level > lastTiltbackLevel || now - lastTiltbackEventMs > 4_000)
-        ) {
-            lastTiltbackEventMs = now
-            _events.tryEmit(RideEvent.Tiltback(assessment))
-        }
-        lastTiltbackLevel = assessment.level
-
         alarms.evaluate(rules, t, now).forEach { _events.tryEmit(RideEvent.Alarm(it)) }
+        val activeIds = alarms.activeRuleIds
 
         (state.alerts - lastAlerts).forEach { _events.tryEmit(RideEvent.WheelWarning(it)) }
         lastAlerts = state.alerts
@@ -237,7 +227,11 @@ class RideMonitor(
             history.addLast(PowerPoint(now, power.toFloat(), t.pwmPercent?.let { kotlin.math.abs(it).toFloat() }))
             while (history.isNotEmpty() && now - history.first().timeMs > HISTORY_MS) history.removeFirst()
         }
-        _snapshot.value = _snapshot.value.copy(tiltback = assessment, tiltbackSpeedKmh = tiltbackSpeed)
+        _snapshot.value = _snapshot.value.copy(
+            tiltback = assessment,
+            tiltbackSpeedKmh = tiltbackSpeed,
+            activeAlarms = rules.filter { it.id in activeIds },
+        )
     }
 
     /** The lower of the configured tiltback speed and the wheel's live speed limit (drops with battery). */
