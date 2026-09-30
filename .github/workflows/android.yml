@@ -24,6 +24,9 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Check Termux build script
+        run: bash -n termux-build.sh && shellcheck -S warning termux-build.sh
+
       - name: Protocol unit tests
         run: ./gradlew --stacktrace :protocol:test
 

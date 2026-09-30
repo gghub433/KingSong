@@ -95,6 +95,31 @@ GitHub Actions (`.github/workflows/android.yml`) на каждый push:
 - гоняет тесты;
 - собирает отладочный APK — его можно скачать во вкладке Actions, артефакт `gyro-debug-apk`.
 
+### На телефоне через Termux
+
+Нужны телефон на ARM (почти любой современный), около 4 ГБ свободного места и желательно от 4 ГБ ОЗУ. Termux ставьте из F-Droid или с GitHub: версия из Google Play устарела и не получает пакеты.
+
+```
+pkg update && pkg install git
+cd ~
+git clone https://github.com/gghub433/KingSong
+cd KingSong
+bash termux-build.sh
+```
+
+Если репозиторий приватный, клонируйте с токеном GitHub: `git clone https://<логин>:<токен>@github.com/gghub433/KingSong`.
+
+Что делает `termux-build.sh`:
+- ставит `openjdk-17` и `aapt2` из пакетов Termux. `aapt2`, который скачивает Gradle, собран только под x86 и на телефоне не запускается, поэтому скрипт передаёт Gradle версию из Termux (`android.aapt2FromMavenOverride`);
+- скачивает Android command-line tools (с проверкой SHA-256) в `~/android-sdk` и ставит `platforms;android-36` и `build-tools;35.0.0`;
+- проверяет, что `aapt2` читает `android.jar` платформы 36;
+- собирает `:app:assembleDebug`, отдавая Gradle треть ОЗУ (от 1 до 3 ГБ);
+- кладёт `Gyro-debug.apk` в «Загрузки». Для этого один раз выполните `termux-setup-storage`, иначе скрипт напишет путь к APK. Установить можно и прямо из Termux: `termux-open app/build/outputs/apk/debug/app-debug.apk`.
+
+Первый запуск скачивает около 1,5 ГБ и идёт 10–30 минут, повторные сборки — несколько минут. `bash termux-build.sh --clean` пересобирает с нуля; остальные аргументы передаются в Gradle.
+
+Проект должен лежать в домашней папке Termux, а не в общей памяти (`/sdcard`, `~/storage`): там нельзя запускать файлы, и скрипт остановится с подсказкой.
+
 ## Происхождение протоколов и лицензия
 
 Производители не публикуют протоколы. Раскладка пакетов, масштабы и команды взяты из открытого проекта [WheelLog](https://github.com/Wheellog/Wheellog.Android), который распространяется под лицензией GPL-3.0. Код декодеров написан заново под свою архитектуру, но опирается на те же форматы. Если приложение будет распространяться, безопаснее выпускать его под GPL-3.0.
